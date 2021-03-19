@@ -72,9 +72,30 @@ def createModels():
 	prediction_data = prediction_data.drop(['16_seed','16_seedopp'], axis = 1)
 
 	# Train the models
-	lr = LogisticRegression(max_iter = 2000)
+	log_grid = {"C": np.logspace(-4, 4, 50),
+				"penalty": ["l1", "l2", "elasticnet", "none"],
+				"solver": ["liblinear"]}
+
+	lr = GridSearchCV(LogisticRegression(),
+						   param_grid=log_grid,
+						   cv=5,
+						   n_jobs=-1)
+
 	lr.fit(X,y)
-	rf = RandomForestClassifier(n_estimators = 1000)
+
+	rf_grid_Grid = {"n_estimators": np.arange(10, 300, 50),
+					"min_samples_split": np.arange(2, 20, 5),
+					"min_samples_leaf": np.arange(1, 20, 4),
+					"random_state": np.arange(1, 2, 1),
+					"max_depth": np.arange(1, 10, 3)
+					}
+
+	rf = GridSearchCV(RandomForestClassifier(),
+						param_grid=rf_grid_Grid,
+						cv=5,
+						n_jobs=-1,
+						)
+
 	rf.fit(X,y)
 
 	return [lr,rf]
@@ -90,9 +111,6 @@ class Bracket:
 		)
 
 	def addRound(self, round, winArray):
-
-		if len(winArray) != 64 / (2**round):
-			print("Invalid Round added")
 
 		self.bracket.append(winArray)
 
@@ -113,8 +131,6 @@ class TournamentSimulation:
 	def buildTeams(self, tournament_file):
 		# Get the tournament
 		df = pd.read_csv(tournament_file)
-
-		print(df.head())
 
 		# Extract the names
 		names = df["Name"].to_numpy()
@@ -159,6 +175,9 @@ class TournamentSimulation:
 		:param team_b: The data series referring to team_b
 		:return: The winning team
 		"""
+
+		if team_b["Name"] == "Baylor" or team_b["Name"] == "Hartford":
+			print("fuck")
 
 		game = self.buildGame(team_a, team_b)
 
@@ -313,7 +332,7 @@ class TournamentSimulation:
 			next_round = []
 			for j in range(int(len(current_round) / 2)): # Predict all games and populate the next round
 
-				self.printMatchUp(current_round[2 * j], current_round[2 * j + 1])
+				# self.printMatchUp(current_round[2 * j], current_round[2 * j + 1])
 				winning_team = predictGame(current_round[2 * j], current_round[2 * j + 1])
 
 				next_round.append(winning_team)
@@ -339,6 +358,7 @@ class TournamentSimulation:
 
 		# Run the prediction and catalogue the most likely answers
 		for i in range(iterations):
+
 			b = self.predictTournament(method)
 
 			if b in predictions:
@@ -357,6 +377,8 @@ class TournamentSimulation:
 				max_occurrence = predictions[b]
 				most_probable_bracket = b
 
+		print(max_occurrence)
+
 		return most_probable_bracket
 
 if __name__ == "__main__":
@@ -364,24 +386,14 @@ if __name__ == "__main__":
 	# Get the trained Models
 	models = createModels()
 
-	sim_0 = TournamentSimulation(models=[models[0]], tournament_file="Prediction_Feed.csv")
+	sim_0 = TournamentSimulation(models=models, tournament_file="Prediction_Feed.csv")
 
-	a = sim_0.prediction(1, "MaxAvg")
+	b = sim_0.prediction(1, "MaxAvg")
+
+	for ab in b.trimObject():
+		print(ab)
+
 	b = sim_0.prediction(1, "MaxMax")
 
-	for row in a.trimObject():
-		print(row)
-
-	for row in b.trimObject():
-		print(row)
-
-	sim_1 = TournamentSimulation(models=[models[1]], tournament_file="Prediction_Feed.csv")
-
-	a = sim_1.prediction(1, "MaxAvg")
-	b = sim_1.prediction(1, "MaxMax")
-
-	for row in a.trimObject():
-		print(row)
-
-	for row in b.trimObject():
-		print(row)
+	for ab in b.trimObject():
+		print(ab)
