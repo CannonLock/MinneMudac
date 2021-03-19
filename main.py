@@ -48,21 +48,6 @@ def buildGame(team_a, team_b):
 
 	return pd.concat([game1, game2], axis=1).T
 
-
-def padString(s, l):
-	side = True
-	while len(s) < l:
-
-		if side:
-			s = s + " "
-		else:
-			s = " " + s
-
-		side = not side
-
-	return s
-
-
 class Bracket:
 
 	def __init__(self):
@@ -72,33 +57,6 @@ class Bracket:
 		return hash(
 			tuple(tuple(x) for x in self.bracket)
 		)
-
-	def __str__(self):
-		for i in range(4):
-			print("Region", i + 1)
-
-			print_bracket = [""] * 31
-
-			# Add the first round in
-			for j in range( i*16, (i+1)*16 ):
-
-				if j % 2 == 0:
-					print_bracket[j % 16] += padString(self.bracket[0][j], 25)
-				else:
-					print_bracket[j % 16] += " " * 25
-
-			# Add arrows to second
-			for j in range(8):
-				print_bracket[j * 4] += "-\\ "
-				print_bracket[j * 4 + 1] += "  -"
-				print_bracket[j * 4 + 2] += "-/ "
-
-			for j in range( i*8, (i+1)*8 ):
-
-				if j % 2 == 0:
-					print_bracket[j % 8] += padString(self.bracket[1][j], 25)
-				else:
-					print_bracket[j % 8] += " " * 25
 
 	def append(self, item):
 		self.bracket.append(item)
@@ -119,12 +77,93 @@ def getName(a):
 
 class TournamentSimulation:
 
-	def __init__(self, model, tournament):
+	def __init__(self, models, tournament_file):
 
-		self.model = model
-		self.tournament = tournament
+		self.models = models
 
-	def predictGame(self, team_a, team_b):
+		self.orderedTeams = self.buildTeams(tournament_file)
+
+	def buildTeams(self, tournament_file):
+		# Get the tournament
+		df = pd.read_csv(tournament_file)
+
+		# Extract the names
+		names = df["Name"].to_numpy()
+		df.drop("Name", axis=1)
+
+		# Extract the Stats
+		stats = df.to_numpy()
+
+		# Build a team object
+		teams = []
+		for i in range(len(names)):
+			teams.append({"Name": names[i], "Stats": stats[i]})
+
+		return teams
+
+	def predictGameMaxAvg(self, team_a, team_b):
+		"""
+		Predicts the probability of a win between A and B selects the winner
+		based on the most probable outcome
+
+		Does not matter what team is team_a and what team is team_b
+
+		:param team_a: The data series referring to team_a
+		:param team_b: The data series referring to team_b
+		:return: The winning team
+		"""
+
+		game = buildGame(team_a, team_b)
+
+		predictions = []
+
+		# Get the model predictions
+		for model in self.models:
+			a_versus_b, b_versus_a = model.predict_proba(game)
+			predictions.extend([a_versus_b, b_versus_a.reverse()])
+
+		# Get each teams win probability
+		b_win_prob, a_win_prob = map(sum, zip(*predictions))
+
+		# If b is more likely to win then let b move forward
+		if b_win_prob > a_win_prob:
+			return team_b
+		else:
+			return team_a
+
+	def predictGameMaxMax(self, team_a, team_b):
+		"""
+		Predicts the probability of a win between A and B selects the winner
+		based on the most probable outcome
+
+		Does not matter what team is team_a and what team is team_b
+
+		:param team_a: The data series referring to team_a
+		:param team_b: The data series referring to team_b
+		:return: The winning team
+		"""
+
+		game = buildGame(team_a, team_b)
+
+		predictions = []
+
+		# Get the model predictions
+		for model in self.models:
+			a_versus_b, b_versus_a = model.predict_proba(game)
+			predictions.extend([a_versus_b, b_versus_a.reverse()])
+
+		# Get each teams win probability
+		highest_b_win_prob, highest_a_win_prob = map(max, zip(*predictions))
+
+		# If b has the most likely chance of winning predict on it
+		if highest_b_win_prob > highest_a_win_prob:
+			return team_b
+
+		# Else if A is more likely to win randomly predict on it
+		else:
+			return team_a
+
+	def predictGameRandAvg(self, team_a, team_b):
 		"""
 		Predicts the probability of a win between A and B then randomly selects a winner based
 		on that probability
@@ -138,23 +177,79 @@ class TournamentSimulation:
 
 		game = buildGame(team_a, team_b)
 
-		game1, game2 = self.model.predict_proba(game)
+		predictions = []
 
-		team_a_win_chance = game1[1] + game2[0]
+		# Predict the game probabilities for the model
+		for model in self.models:
+			a_versus_b, b_versus_a = model.predict_proba(game)
+			predictions.extend([a_versus_b, b_versus_a.reverse()])
 
-		if random.uniform(0, 2) < team_a_win_chance:
+		# Get each teams win probability
+		b_win_prob, a_win_prob = map(sum, zip(*predictions))
+
+		# Choose a winning team based on the predicted probability
+		if random.uniform(0, len(self.models)*2) < a_win_prob:
 			return team_a
 
 		return team_b
 
-	def predictTournament(self):
+	def predictGameRandMax(self, team_a, team_b):
+ 		"""
+		Finds the most confident models prediction and then randomly chooses a game on that prob
+
+		Does not matter what team is team_a and what team is team_b
+
+		:param team_a: The data series referring to team_a
+		:param team_b: The data series referring to team_b
+		:return: The winning team
+		"""
+
+		game = buildGame(team_a, team_b)
+
+		predictions = []
+
+		# Predict the game probabilities for the model
+		for model in self.models:
+			a_versus_b, b_versus_a = model.predict_proba(game)
+			predictions.extend([a_versus_b, b_versus_a.reverse()])
+
+		# Get each teams win probability
+		highest_b_win_prob, highest_a_win_prob = map(max, zip(*predictions))
+
+		# If b has the most likely chance of winning predict on it
+		if highest_b_win_prob > highest_a_win_prob:
+
+			if random.uniform(0, 1) < highest_b_win_prob:
+				return team_b
+			else:
+				return team_a
+
+		# Else if A is more likely to win randomly predict on it
+		else:
+			if random.uniform(0, 1) < highest_a_win_prob:
+				return team_a
+			else:
+				return team_b
+
+	def predictTournament(self, method):
 		"""
 		Predicts the bracket of the March Madness tournament
 
+		:param method: The method used to predict the games
 		:param tournament: Array of arrays where adjacent arrays are games to be played
 		:return: Returns a resulting bracket object
 		"""
 		bracket = Bracket()
+
+		# Choose the prediction technique
+		predictGame = None
+		if method == "Max":
+			predictGame = self.predictGameMax
+
+		elif method == "Rand":
+			predictGame = self.predictGameRand
+
+
 
 		current_round = self.tournament
 		i = 0
@@ -165,7 +260,7 @@ class TournamentSimulation:
 			next_round = []
 			for j in range(len(current_round) / 2): # Predict all games and populate the next round
 
-				winning_team = self.predictGame(current_round[2 * j], current_round[2 * j + 2])
+				winning_team = predictGame(current_round[2 * j], current_round[2 * j + 2])
 				next_round.append(winning_team)
 
 			current_round = next_round
@@ -176,10 +271,11 @@ class TournamentSimulation:
 
 		return bracket
 
-	def prediction(self, iterations):
+	def prediction(self, iterations, method = "Rand"):
 		"""
 		Runs prediction multiple times on the tournament to get the most probable outcome
 
+		:param method: The method which to predict the games
 		:param iterations: Number of times to simulate the tournament
 		:return: Bracket that occurred the most
 		"""
@@ -195,6 +291,7 @@ class TournamentSimulation:
 
 			else:
 				predictions[b] = 1
+
 
 		max_occurrence = 0
 		most_probable_bracket = None
